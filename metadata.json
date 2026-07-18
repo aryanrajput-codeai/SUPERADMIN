@@ -1,0 +1,6 @@
+{
+  "name": "WebRajya POS - Super Admin",
+  "description": "Enterprise-grade Super Admin Portal for WebRajya POS SaaS, enabling comprehensive tenant management, transactional setups, subscriptions, revenue analytics, and global system configurations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
