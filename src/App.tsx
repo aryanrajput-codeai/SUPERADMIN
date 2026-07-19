@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Lock, 
-  ShieldCheck, 
-  Mail, 
-  ArrowRight, 
+import {
+  Lock,
+  ShieldCheck,
+  Mail,
+  ArrowRight,
   AlertTriangle,
 } from 'lucide-react';
 
@@ -228,17 +228,18 @@ export default function App() {
     setActiveTab('restaurants');
   };
 
+
   // ─── RENDER ───────────────────────────────────────────────
   return (
     <div className={`min-h-screen font-sans flex text-slate-900 ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-[#f8fafc]'}`}>
-      
+
       {/* 1. AUTHENTICATION LOGIN OVERLAY */}
       <AnimatePresence>
         {!isLoggedIn && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900 p-4 relative overflow-hidden">
             {/* Gradient background */}
             <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-900/30 via-slate-900 to-slate-950 -z-10" />
-            
+
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
