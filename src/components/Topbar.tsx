@@ -9,7 +9,8 @@ import {
   ChevronDown, 
   CheckCircle2, 
   Clock,
-  HelpCircle
+  HelpCircle,
+  Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -21,6 +22,7 @@ interface TopbarProps {
   isDarkMode: boolean;
   setIsDarkMode: (val: boolean) => void;
   onOpenWizard: () => void;
+  onToggleSidebar: () => void;
 }
 
 export default function Topbar({ 
@@ -30,7 +32,8 @@ export default function Topbar({
   searchValue = '', 
   isDarkMode, 
   setIsDarkMode,
-  onOpenWizard 
+  onOpenWizard,
+  onToggleSidebar
 }: TopbarProps) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -57,11 +60,20 @@ export default function Topbar({
   };
 
   return (
-    <div className="h-16 border-b border-slate-200 bg-white px-8 flex items-center justify-between sticky top-0 z-10 shadow-sm">
+    <div className="h-16 border-b border-slate-200 bg-white px-4 md:px-8 flex items-center justify-between sticky top-0 z-10 shadow-sm">
       {/* Breadcrumb section */}
-      <div className="flex items-center gap-3 text-sm font-medium text-slate-500">
-        <span>WebRajya Portal</span>
-        <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="flex items-center gap-2 md:gap-3 text-sm font-medium text-slate-500">
+        <button
+          id="btn-toggle-sidebar"
+          onClick={onToggleSidebar}
+          className="p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-950 transition-colors mr-1 cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20"
+          aria-label="Toggle Sidebar Menu"
+        >
+          <Menu className="w-5 h-5 text-slate-600" />
+        </button>
+
+        <span className="hidden sm:inline text-slate-400">WebRajya Portal</span>
+        <svg className="w-3 h-3 text-slate-300 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
         </svg>
         <span className="text-slate-900 font-semibold">{getBreadcrumbLabel()}</span>
