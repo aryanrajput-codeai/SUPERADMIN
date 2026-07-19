@@ -1,13 +1,15 @@
-import { createClient } from '@supabase/supabase-js';
-
 const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || '';
 
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+console.log("Supabase URL:", supabaseUrl);
+console.log("Supabase Key exists:", !!supabaseAnonKey);
+
+export const isSupabaseConfigured =
+  supabaseUrl.startsWith("https://") && supabaseAnonKey.length > 0;
 
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
-  : (null as any);
+  : null;
 
 // ─── Hardcoded Super Admin Access List ──────────────────────
 // These emails are authorized super admins. In production, use a
