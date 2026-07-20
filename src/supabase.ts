@@ -1,9 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = ((import.meta as any).env.VITE_SUPABASE_URL || '').trim();
+const supabaseAnonKey = ((import.meta as any).env.VITE_SUPABASE_ANON_KEY || '').trim();
 
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+const isValidUrl = (url: string): boolean => {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl && 
+  supabaseAnonKey && 
+  isValidUrl(supabaseUrl) &&
+  !supabaseUrl.includes('your-project') &&
+  !supabaseAnonKey.includes('your-anon-key')
+);
 
 // If keys are provided, we instantiate the real Supabase client.
 // Otherwise, we export a proxy/null client to prevent runtime crashes.
