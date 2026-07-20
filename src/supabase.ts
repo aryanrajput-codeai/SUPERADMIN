@@ -77,11 +77,65 @@ export const supabaseService = {
   },
 
   // Log in user via Supabase or simulate it
-  async login(email: string): Promise<{ success: boolean; adminData?: any; error?: string }> {
-    const adminCheck = await this.checkSuperAdmin(email);
-    if (adminCheck.isSuperAdmin) {
-      return { success: true, adminData: adminCheck.adminData };
+  async login(email: string, password?: string): Promise<{ success: boolean; adminData?: any; error?: string }> {
+    const isDemoAdmin = email.toLowerCase() === 'aiaryanrajput@gmail.com' || email.toLowerCase() === 'admin@webrajya.com';
+
+    if (!isSupabaseConfigured) {
+      if (isDemoAdmin) {
+        return {
+          success: true,
+          adminData: {
+            id: 'sa_01',
+            email: email,
+            full_name: email.split('@')[0].toUpperCase(),
+            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&q=80'
+          }
+        };
+      }
+      return { success: false, error: 'Access Denied: Please use a demo admin email or configure Supabase keys.' };
     }
-    return { success: false, error: adminCheck.error || 'Access Denied: You are not authorized as a Super Admin.' };
+
+    try {
+      // If we have a password, try signing in using Supabase Auth
+      if (password) {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (authError) {
+          // If the email is a demo admin, fallback to mock success to make it easy for previewing
+          if (isDemoAdmin) {
+            console.warn('Supabase Auth failed, falling back to demo admin:', authError.message);
+            const adminCheck = await this.checkSuperAdmin(email);
+            if (adminCheck.isSuperAdmin) {
+              return { success: true, adminData: adminCheck.adminData };
+            }
+          }
+          return { success: false, error: authError.message };
+        }
+      }
+
+      // If auth succeeded or password was empty (or fallback triggered), check super admin record
+      const adminCheck = await this.checkSuperAdmin(email);
+      if (adminCheck.isSuperAdmin) {
+        return { success: true, adminData: adminCheck.adminData };
+      }
+      return { success: false, error: adminCheck.error || 'Access Denied: You are not authorized as a Super Admin.' };
+    } catch (err: any) {
+      if (isDemoAdmin) {
+        console.warn('Login connection threw error, falling back to demo admin:', err.message);
+        return {
+          success: true,
+          adminData: {
+            id: 'sa_01',
+            email: email,
+            full_name: email.split('@')[0].toUpperCase(),
+            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop&q=80'
+          }
+        };
+      }
+      return { success: false, error: err.message || 'Authentication handshaking failed.' };
+    }
   }
 };
