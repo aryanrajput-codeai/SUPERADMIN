@@ -141,27 +141,27 @@ export default function RestaurantsView({
     }
   };
 
-  // Login As Restaurant Simulation
+  // Tenant Session Switcher for Super Admin
   const handleLoginAsRestaurant = (rest: Restaurant) => {
-    const alertBox = document.createElement('div');
-    alertBox.className = "fixed bottom-5 right-5 bg-slate-900 border border-slate-800 shadow-2xl p-4 rounded-xl max-w-sm text-slate-100 z-50 flex flex-col space-y-2 animate-bounce";
-    alertBox.innerHTML = `
-      <div class="flex items-center space-x-2">
-        <span class="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-ping"></span>
-        <strong class="text-xs font-semibold">Injecting Secure Session Token</strong>
-      </div>
-      <p class="text-[11px] text-slate-400">Authorized super_admin privilege transfer. Spoofing token for <strong>${rest.name}</strong>...</p>
-      <div class="bg-indigo-950/50 p-2 rounded-lg font-mono text-[9px] text-indigo-300">
-        curl -X POST -H "Authorization: Bearer sa_temp_token" \\
-        https://api.webrajya.com/v1/auth/impersonate \\
-        -d '{"tenant_id": "${rest.id}"}'
-      </div>
-      <span class="text-[9px] text-slate-500 text-right">Done! POS system will open with simulated tenant rights.</span>
-    `;
-    document.body.appendChild(alertBox);
-    setTimeout(() => {
-      document.body.removeChild(alertBox);
-    }, 5500);
+    // Store exact tenant session payload in localStorage for POS context isolation
+    const tenantSession = {
+      restaurantId: rest.id,
+      restaurantName: rest.name,
+      ownerName: rest.owner_name || rest.name,
+      email: rest.email || 'admin@webrajya.com',
+      role: 'owner',
+      plan: rest.subscription_plan || 'Enterprise'
+    };
+    
+    localStorage.setItem('wr_pos_session', JSON.stringify(tenantSession));
+    localStorage.setItem('ij_logged_restaurant_id', rest.id);
+    localStorage.setItem('wr_restaurant_id', rest.id);
+
+    const posUrl = window.location.hostname.includes('vercel.app')
+      ? 'https://pos-three-lemon.vercel.app'
+      : window.location.origin;
+
+    window.open(posUrl, '_blank');
   };
 
   return (
