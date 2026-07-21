@@ -35,6 +35,7 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem('wr_is_logged_in') === 'true';
   });
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [authEmail, setAuthEmail] = useState<string>('');
   const [authPassword, setAuthPassword] = useState<string>('');
   const [authError, setAuthError] = useState<string | null>(null);
@@ -121,6 +122,8 @@ export default function App() {
       }
     } catch (err: any) {
       setAuthError(err.message || 'Authentication handshaking failed.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -305,9 +308,10 @@ export default function App() {
                 <button
                   id="btn-login-submit"
                   type="submit"
-                  className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-3.5 rounded-2xl transition-all shadow-lg shadow-indigo-600/15 hover:shadow-indigo-600/25 cursor-pointer flex items-center justify-center space-x-2 text-sm mt-2"
+                  disabled={isLoggingIn}
+                  className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-3.5 rounded-2xl transition-all shadow-lg shadow-indigo-600/15 hover:shadow-indigo-600/25 cursor-pointer flex items-center justify-center space-x-2 text-sm mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span>Authenticate Session</span>
+                  <span>{isLoggingIn ? 'Authenticating...' : 'Authenticate Session'}</span>
                   <ArrowRight className="w-4.5 h-4.5" />
                 </button>
               </form>
