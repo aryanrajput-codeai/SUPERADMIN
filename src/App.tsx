@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Lock,
   ShieldCheck,
   Mail,
   ArrowRight,
+  User,
   AlertTriangle,
+  Sparkles,
+  Building
 } from 'lucide-react';
 
 // Components
@@ -22,116 +25,93 @@ import SupportView from './components/SupportView';
 import SettingsView from './components/SettingsView';
 import ProfileView from './components/ProfileView';
 
-// Supabase Services
-import { supabaseService } from './supabase';
-import {
-  fetchRestaurants,
-  fetchBranches,
-  fetchPayments,
-  fetchActivityLogs,
-  updateRestaurantStatus,
-  updateRestaurantPlan,
-  deleteRestaurant,
-  updateRestaurant,
-  onboardRestaurantTransaction,
-  type OnboardingData,
-} from './supabaseDb';
-
-// Local Store & Types
+// Services & Store
 import { dbStore } from './utils/mockData';
+import { supabaseService, isSupabaseConfigured } from './supabase';
 import { Restaurant, RestaurantStatus, SubscriptionPlanTier, TicketStatus, GlobalSettings } from './types';
 
 export default function App() {
-  // ─── Session State ────────────────────────────────────────
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() =>
-    localStorage.getItem('wr_is_logged_in') === 'true'
-  );
+  // Session Authentication State
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('wr_is_logged_in') === 'true';
+  });
   const [authEmail, setAuthEmail] = useState<string>('');
   const [authPassword, setAuthPassword] = useState<string>('');
   const [authError, setAuthError] = useState<string | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [adminUser, setAdminUser] = useState(() => {
     const saved = localStorage.getItem('wr_admin_user');
     return saved ? JSON.parse(saved) : { name: 'Aryan Rajput', email: 'aiaryanrajput@gmail.com' };
   });
 
-  // ─── Global Data States ───────────────────────────────────
+  // Global POS SaaS database states
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
-  const [tickets, setTickets] = useState<any[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
-  const [logs, setLogs] = useState<any[]>([]);
+  const [payments, setPayments] = useState([]);
+  const [tickets, setTickets] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [logs, setLogs] = useState([]);
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
-  const [isDataLoading, setIsDataLoading] = useState(false);
 
-  // ─── UI State ─────────────────────────────────────────────
+  // Tab Selection State
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedRestaurantId, setSelectedRestaurantId] = useState<string | null>(null);
+
+  // Utilities UI State
   const [isWizardOpen, setIsWizardOpen] = useState<boolean>(false);
   const [searchValue, setSearchValue] = useState<string>('');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
 
-  // ─── Load all data from Supabase ─────────────────────────
-  const loadAllData = useCallback(async () => {
-    setIsDataLoading(true);
-    try {
-      const [rests, pays, branchesList, logsList] = await Promise.all([
-        fetchRestaurants(),
-        fetchPayments(),
-        fetchBranches(),
-        fetchActivityLogs(),
-      ]);
-      setRestaurants(rests);
-      setPayments(pays);
-      setBranches(branchesList);
-      setLogs(logsList);
-      setTickets([...dbStore.tickets]);
-      setSettings({ ...dbStore.settings });
-    } catch (err: any) {
-      console.error('[App] Failed to load data from Supabase:', err.message);
-      // Fallback to local store
-      setRestaurants([...dbStore.restaurants]);
-      setPayments([...dbStore.payments as any]);
-      setBranches([...dbStore.branches as any]);
-      setLogs([...dbStore.logs as any]);
-      setTickets([...dbStore.tickets as any]);
-      setSettings({ ...dbStore.settings });
-    } finally {
-      setIsDataLoading(false);
+  // Layout Navigation State
+  const [isExpanded, setIsExpanded] = useState<boolean>(() => {
+    const saved = localStorage.getItem('wr_sidebar_expanded');
+    return saved ? JSON.parse(saved) : false;
+  });
+  const [isMobileOpen, setIsMobileOpen] = useState<boolean>(false);
+
+  const toggleSidebar = () => {
+    if (window.innerWidth >= 1024) {
+      setIsExpanded(prev => {
+        const next = !prev;
+        localStorage.setItem('wr_sidebar_expanded', JSON.stringify(next));
+        return next;
+      });
+    } else {
+      setIsMobileOpen(prev => !prev);
     }
+  };
+
+  // Load from database store on start
+  useEffect(() => {
+    setRestaurants([...dbStore.restaurants]);
+    setPayments([...dbStore.payments as any]);
+    setTickets([...dbStore.tickets as any]);
+    setBranches([...dbStore.branches as any]);
+    setLogs([...dbStore.logs as any]);
+    setSettings({ ...dbStore.settings });
   }, []);
 
-  useEffect(() => {
-    if (isLoggedIn) {
-      loadAllData();
-    }
-  }, [isLoggedIn, loadAllData]);
-
-  // ─── Session helpers ──────────────────────────────────────
+  // Update localStorage session helpers
   const saveSession = (loggedIn: boolean, user: any) => {
     setIsLoggedIn(loggedIn);
     localStorage.setItem('wr_is_logged_in', String(loggedIn));
     localStorage.setItem('wr_admin_user', JSON.stringify(user));
   };
 
-  // ─── Auth Handler ─────────────────────────────────────────
+  // Auth Submit handler
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
-    setIsAuthLoading(true);
 
     if (!authEmail) {
       setAuthError('Please specify an authorized email address.');
-      setIsAuthLoading(false);
       return;
     }
 
     try {
-      const res = await supabaseService.login(authEmail, authPassword);
+      const res = await supabaseService.login(authEmail);
       if (res.success) {
         const userObj = {
-          name: res.adminData?.full_name || authEmail.split('@')[0],
-          email: res.adminData?.email || authEmail,
+          name: res.adminData?.full_name || 'Aryan Rajput',
+          email: res.adminData?.email || authEmail
         };
         setAdminUser(userObj);
         saveSession(true, userObj);
@@ -139,9 +119,7 @@ export default function App() {
         setAuthError(res.error || 'Access Denied: Not a super admin.');
       }
     } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed.');
-    } finally {
-      setIsAuthLoading(false);
+      setAuthError(err.message || 'Authentication handshaking failed.');
     }
   };
 
@@ -151,47 +129,55 @@ export default function App() {
     setSelectedRestaurantId(null);
   };
 
-  // ─── Restaurant Handlers ──────────────────────────────────
-  const handleCreateRestaurant = async (data: any) => {
-    const result = await onboardRestaurantTransaction(data);
-    if (result.success) {
-      await loadAllData(); // Refresh from Supabase
+  // HANDLERS FOR CASCAED DATABASE MUTATIONS (Pushed into dbStore)
+  const handleCreateRestaurant = (data: any) => {
+    const res = dbStore.createRestaurantTransaction(data);
+    if (res.success && res.restaurant) {
+      // Refresh React State from store
+      setRestaurants([...dbStore.restaurants]);
+      setBranches([...dbStore.branches as any]);
+      setPayments([...dbStore.payments as any]);
+      setLogs([...dbStore.logs as any]);
     }
-    return result;
+    return res;
   };
 
-  const handleUpdateStatus = async (id: string, status: RestaurantStatus) => {
-    await updateRestaurantStatus(id, status);
-    await loadAllData();
+  const handleUpdateStatus = (id: string, status: RestaurantStatus) => {
+    dbStore.updateRestaurantStatus(id, status);
+    setRestaurants([...dbStore.restaurants]);
+    setLogs([...dbStore.logs as any]);
   };
 
-  const handleRenewSubscription = async (id: string, plan: 'starter' | 'premium' | 'enterprise', months: number) => {
-    const r = restaurants.find(x => x.id === id);
-    if (!r) return;
-    const expiry = new Date(r.expiry_date);
-    expiry.setMonth(expiry.getMonth() + months);
-    await updateRestaurantPlan(id, plan as SubscriptionPlanTier, expiry.toISOString());
-    // Also update local logs/payments via dbStore
+  const handleRenewSubscription = (id: string, plan: 'starter' | 'premium' | 'enterprise', months: number) => {
     dbStore.renewSubscription(id, plan, months);
-    await loadAllData();
+    setRestaurants([...dbStore.restaurants]);
+    setPayments([...dbStore.payments as any]);
+    setLogs([...dbStore.logs as any]);
   };
 
   const handleResetPassword = (id: string) => {
-    return dbStore.resetPassword(id);
+    const pass = dbStore.resetPassword(id);
+    setLogs([...dbStore.logs as any]);
+    return pass;
   };
 
-  const handleDeleteRestaurant = async (id: string) => {
-    await deleteRestaurant(id);
-    if (selectedRestaurantId === id) setSelectedRestaurantId(null);
-    await loadAllData();
+  const handleDeleteRestaurant = (id: string) => {
+    dbStore.deleteRestaurant(id);
+    setRestaurants([...dbStore.restaurants]);
+    setBranches([...dbStore.branches as any]);
+    setLogs([...dbStore.logs as any]);
+    if (selectedRestaurantId === id) {
+      setSelectedRestaurantId(null);
+    }
   };
 
-  const handleEditRestaurant = async (rest: Restaurant) => {
-    await updateRestaurant(rest.id, rest);
-    await loadAllData();
+  const handleEditRestaurant = (rest: Restaurant) => {
+    // Local store updates automatically via object mutation in the restaurants view modal,
+    // we save changes and update our React view.
+    dbStore.save();
+    setRestaurants([...dbStore.restaurants]);
   };
 
-  // ─── Ticket Handlers ──────────────────────────────────────
   const handleReplyTicket = (id: string, text: string) => {
     dbStore.replyTicket(id, text);
     setTickets([...dbStore.tickets as any]);
@@ -202,7 +188,6 @@ export default function App() {
     setTickets([...dbStore.tickets as any]);
   };
 
-  // ─── Settings Handlers ────────────────────────────────────
   const handleUpdateSettings = (newSettings: Partial<GlobalSettings>) => {
     dbStore.updateGlobalSettings(newSettings);
     setSettings({ ...dbStore.settings });
@@ -217,7 +202,7 @@ export default function App() {
     setLogs([]);
   };
 
-  // ─── Navigation ───────────────────────────────────────────
+  // Helper navigation switch
   const handleNavigateToTab = (tab: string) => {
     setActiveTab(tab);
     setSelectedRestaurantId(null);
@@ -228,47 +213,66 @@ export default function App() {
     setActiveTab('restaurants');
   };
 
-
-  // ─── RENDER ───────────────────────────────────────────────
+  // RENDER APP
   return (
-    <div className={`min-h-screen font-sans flex text-slate-900 ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-[#f8fafc]'}`}>
+    <div className={`min-h-screen font-sans flex text-slate-900 transition-colors duration-300 ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-[#f8fafc]'}`}>
 
       {/* 1. AUTHENTICATION LOGIN OVERLAY */}
       <AnimatePresence>
         {!isLoggedIn && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900 p-4 relative overflow-hidden">
-            {/* Gradient background */}
-            <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-900/30 via-slate-900 to-slate-950 -z-10" />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden bg-slate-50">
+            {/* Background elements */}
+            <div className="absolute inset-0 bg-slate-50 -z-10 overflow-hidden">
+              {/* Radial gradient overlay */}
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-100/40 via-slate-50 to-white" />
+
+              {/* Dotted Grid lines */}
+              <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_1.5px,transparent_1.5px)] [background-size:24px_24px] opacity-80" />
+
+              {/* Subtle light blobs */}
+              <div className="absolute top-1/4 right-1/4 w-[450px] h-[450px] bg-indigo-500/10 rounded-full blur-[110px] animate-pulse" style={{ animationDuration: '6s' }} />
+              <div className="absolute bottom-1/4 left-1/3 w-[350px] h-[350px] bg-violet-500/5 rounded-full blur-[90px] animate-pulse" style={{ animationDuration: '9s' }} />
+
+              {/* Decorative premium vector circles */}
+              <div className="absolute top-10 left-10 w-96 h-96 border border-indigo-200/20 rounded-full" />
+              <div className="absolute top-5 left-5 w-[600px] h-[600px] border border-indigo-200/20 rounded-full" />
+            </div>
 
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className="bg-white rounded-3xl shadow-2xl border border-slate-100 max-w-md w-full p-8 space-y-6 text-left"
+              initial={{ opacity: 0, scale: 0.96, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 15 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="bg-white/90 backdrop-blur-xl rounded-[2.5rem] shadow-[0_20px_50px_rgba(79,70,229,0.07)] border border-slate-200/80 max-w-md w-full p-10 space-y-8 text-left relative overflow-hidden"
             >
-              {/* Brand */}
-              <div className="text-center space-y-2">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center font-extrabold text-xl text-white mx-auto shadow-xl shadow-indigo-500/20">
+              {/* Card top decorative accent line */}
+              <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500" />
+
+              {/* Brand Branding */}
+              <div className="text-center space-y-3">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center font-extrabold text-2xl text-white mx-auto shadow-xl shadow-indigo-600/20">
                   WR
                 </div>
-                <h2 className="text-lg font-bold text-slate-800 tracking-tight">WebRajya POS</h2>
-                <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Super Admin Gateway</p>
+                <div className="space-y-1">
+                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">WebRajya POS</h2>
+                  <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">Super Admin Gateway</p>
+                </div>
               </div>
 
-              {/* Error */}
+              {/* Warnings / Error notifications */}
               {authError && (
-                <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-xl text-rose-700 text-xs flex items-start space-x-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span className="font-semibold">{authError}</span>
+                <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-800 text-xs flex items-start space-x-2.5 animate-shake">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                  <span className="font-semibold leading-relaxed">{authError}</span>
                 </div>
               )}
 
               {/* Login Form */}
-              <form onSubmit={handleLogin} className="space-y-4 text-xs text-slate-700">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Super Admin Email</label>
+              <form onSubmit={handleLogin} className="space-y-5 text-xs text-slate-600">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">Super Admin Email</label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Mail className="absolute left-4.5 top-3.5 h-4.5 w-4.5 text-slate-400" />
                     <input
                       id="input-login-email"
                       type="email"
@@ -276,15 +280,15 @@ export default function App() {
                       placeholder="aiaryanrajput@gmail.com"
                       value={authEmail}
                       onChange={(e) => setAuthEmail(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white text-slate-800 font-medium"
+                      className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white text-slate-900 placeholder-slate-400 font-medium transition-all"
                     />
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Super Admin Password</label>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">Super Admin Password</label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Lock className="absolute left-4.5 top-3.5 h-4.5 w-4.5 text-slate-400" />
                     <input
                       id="input-login-password"
                       type="password"
@@ -292,7 +296,7 @@ export default function App() {
                       placeholder="••••••••"
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white text-slate-800"
+                      className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white text-slate-900 placeholder-slate-400 font-medium transition-all"
                     />
                   </div>
                 </div>
@@ -300,26 +304,19 @@ export default function App() {
                 <button
                   id="btn-login-submit"
                   type="submit"
-                  disabled={isAuthLoading}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold py-2.5 rounded-xl transition-all shadow-sm shadow-indigo-500/15 cursor-pointer flex items-center justify-center space-x-1.5"
+                  className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-3.5 rounded-2xl transition-all shadow-lg shadow-indigo-600/15 hover:shadow-indigo-600/25 cursor-pointer flex items-center justify-center space-x-2 text-sm mt-2"
                 >
-                  {isAuthLoading ? (
-                    <span>Authenticating...</span>
-                  ) : (
-                    <>
-                      <span>Authenticate Session</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
+                  <span>Authenticate Session</span>
+                  <ArrowRight className="w-4.5 h-4.5" />
                 </button>
               </form>
 
               {/* Info panel */}
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-start space-x-2 text-[10px] text-slate-500 leading-normal">
-                <ShieldCheck className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+              <div className="p-4 bg-indigo-50/50 border border-indigo-100/50 rounded-2xl flex items-start space-x-3 text-[10px] text-indigo-700 leading-normal">
+                <ShieldCheck className="w-5 h-5 text-indigo-500 shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-slate-700 block">Restricted Access Portal</strong>
-                  Only authorized super admin accounts can authenticate. Demo: <span className="font-mono font-semibold text-indigo-600">aiaryanrajput@gmail.com</span> / <span className="font-mono font-semibold text-indigo-600">admin123</span>
+                  <strong className="text-indigo-950 block font-bold mb-0.5">Restricted Access Portal</strong>
+                  Only authorized members in the super_admins database can authenticate. Demo Account: <span className="font-mono font-bold text-indigo-600 select-all">aiaryanrajput@gmail.com</span>
                 </div>
               </div>
             </motion.div>
@@ -327,18 +324,32 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* 2. SUPER ADMIN CONTROL CENTER */}
+      {/* 2. SUPER ADMIN CONTROL CENTER LAYOUT */}
       {isLoggedIn && settings && (
         <>
+          {/* Mobile Backdrop Overlay */}
+          {isMobileOpen && (
+            <div
+              className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-30 lg:hidden cursor-pointer"
+              onClick={() => setIsMobileOpen(false)}
+            />
+          )}
+
+          {/* Main Sidebar */}
           <Sidebar
             activeTab={activeTab}
             setActiveTab={handleNavigateToTab}
             onLogout={handleLogout}
             adminName={adminUser.name}
             adminEmail={adminUser.email}
+            isExpanded={isExpanded}
+            isMobileOpen={isMobileOpen}
+            onCloseMobile={() => setIsMobileOpen(false)}
           />
 
+          {/* Core Content Container */}
           <div className="flex-1 flex flex-col h-screen overflow-hidden">
+            {/* Global Topbar */}
             <Topbar
               activeTab={activeTab}
               adminName={adminUser.name}
@@ -347,19 +358,13 @@ export default function App() {
               isDarkMode={isDarkMode}
               setIsDarkMode={setIsDarkMode}
               onOpenWizard={() => setIsWizardOpen(true)}
+              onToggleSidebar={toggleSidebar}
             />
 
+            {/* Scrollable Workspace */}
             <main className="flex-1 overflow-y-auto p-8">
-              {/* Loading overlay */}
-              {isDataLoading && (
-                <div className="fixed inset-0 z-30 bg-white/50 flex items-center justify-center pointer-events-none">
-                  <div className="flex items-center gap-2 bg-white rounded-xl shadow-lg px-5 py-3 border border-slate-100">
-                    <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-sm font-medium text-slate-600">Loading from Supabase...</span>
-                  </div>
-                </div>
-              )}
 
+              {/* Conditional view rendering */}
               <AnimatePresence mode="wait">
                 <motion.div
                   key={selectedRestaurantId ? `details-${selectedRestaurantId}` : activeTab}
@@ -413,7 +418,7 @@ export default function App() {
                         <PaymentsView
                           payments={payments}
                           onRefundPayment={(id) => {
-                            dbStore.updateRestaurantStatus(id, 'suspended');
+                            dbStore.updateRestaurantStatus(id, 'suspended'); // Suspend on refund
                             setPayments([...dbStore.payments as any]);
                             setRestaurants([...dbStore.restaurants]);
                           }}
@@ -447,7 +452,7 @@ export default function App() {
                         <ProfileView
                           adminName={adminUser.name}
                           adminEmail={adminUser.email}
-                          onUpdateName={(name: string) => {
+                          onUpdateName={(name) => {
                             const updated = { ...adminUser, name };
                             setAdminUser(updated);
                             localStorage.setItem('wr_admin_user', JSON.stringify(updated));
@@ -458,10 +463,11 @@ export default function App() {
                   )}
                 </motion.div>
               </AnimatePresence>
+
             </main>
           </div>
 
-          {/* 3. ADD RESTAURANT WIZARD */}
+          {/* 3. MULTI-STEP CREATOR WIZARD OVERLAY */}
           <AnimatePresence>
             {isWizardOpen && (
               <AddRestaurantWizard
@@ -472,6 +478,7 @@ export default function App() {
           </AnimatePresence>
         </>
       )}
+
     </div>
   );
 }
