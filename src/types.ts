@@ -21,6 +21,8 @@ export interface Restaurant {
   state: string;
   country: string;
   gst_number: string;
+  owner_email?: string;
+  owner_password?: string;
   timezone: string;
   currency: string;
   invoice_prefix: string;
