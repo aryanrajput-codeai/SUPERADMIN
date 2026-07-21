@@ -12,6 +12,8 @@ const isValidUrl = (url: string): boolean => {
   }
 };
 
+export const isSupabaseConfigured: boolean = isValidUrl(supabaseUrl) && Boolean(supabaseAnonKey);
+
 // If keys are provided, we instantiate the real Supabase client.
 // Otherwise, we export a proxy/null client to prevent runtime crashes.
 export const supabase = isSupabaseConfigured
