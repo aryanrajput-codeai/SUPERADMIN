@@ -28,6 +28,7 @@ import ProfileView from './components/ProfileView';
 // Services & Store
 import { dbStore } from './utils/mockData';
 import { supabaseService, isSupabaseConfigured } from './supabase';
+import { fetchRestaurants } from './supabaseDb';
 import { Restaurant, RestaurantStatus, SubscriptionPlanTier, TicketStatus, GlobalSettings } from './types';
 
 export default function App() {
@@ -82,12 +83,20 @@ export default function App() {
 
   // Load from database store on start
   useEffect(() => {
-    setRestaurants([...dbStore.restaurants]);
-    setPayments([...dbStore.payments as any]);
-    setTickets([...dbStore.tickets as any]);
-    setBranches([...dbStore.branches as any]);
-    setLogs([...dbStore.logs as any]);
-    setSettings({ ...dbStore.settings });
+    async function loadLiveData() {
+      if (isSupabaseConfigured) {
+        const liveRestaurants = await fetchRestaurants();
+        setRestaurants(liveRestaurants);
+      } else {
+        setRestaurants([...dbStore.restaurants]);
+      }
+      setPayments([...dbStore.payments as any]);
+      setTickets([...dbStore.tickets as any]);
+      setBranches([...dbStore.branches as any]);
+      setLogs([...dbStore.logs as any]);
+      setSettings({ ...dbStore.settings });
+    }
+    loadLiveData();
   }, []);
 
   // Update localStorage session helpers
@@ -134,11 +143,11 @@ export default function App() {
   };
 
   // HANDLERS FOR CASCAED DATABASE MUTATIONS (Pushed into dbStore)
-  const handleCreateRestaurant = (data: any) => {
-    const res = dbStore.createRestaurantTransaction(data);
-    if (res.success && res.restaurant) {
-      // Refresh React State from store
-      setRestaurants([...dbStore.restaurants]);
+  const handleCreateRestaurant = async (data: any) => {
+    const res = await dbStore.createRestaurantTransaction(data);
+    if (res.success) {
+      const liveRestaurants = await fetchRestaurants();
+      setRestaurants(liveRestaurants);
       setBranches([...dbStore.branches as any]);
       setPayments([...dbStore.payments as any]);
       setLogs([...dbStore.logs as any]);

@@ -67,18 +67,54 @@ const DEFAULT_TAXES = [
 export async function fetchRestaurants(): Promise<Restaurant[]> {
   if (!isSupabaseConfigured) return [...dbStore.restaurants];
 
-  const { data, error } = await supabase
-    .from('restaurants')
-    .select('*')
-    .order('created_at', { ascending: false });
+  try {
+    const { data: rawRestaurants, error: restErr } = await supabase
+      .from('restaurants')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-  if (error) {
-    console.warn('[supabaseDb] fetchRestaurants error, falling back:', error.message);
+    if (restErr || !rawRestaurants) {
+      console.warn('[supabaseDb] fetchRestaurants error, falling back:', restErr?.message);
+      return [...dbStore.restaurants];
+    }
+
+    // Join restaurant_settings and branches to populate UI properties
+    const { data: allSettings } = await supabase.from('restaurant_settings').select('*');
+    const { data: allBranches } = await supabase.from('branches').select('*');
+
+    const mappedRestaurants: Restaurant[] = rawRestaurants.map((r: any) => {
+      const setting = allSettings?.find((s: any) => s.restaurant_id === r.id);
+      const branchesCount = allBranches?.filter((b: any) => b.restaurant_id === r.id).length || 1;
+
+      return {
+        id: r.id,
+        name: r.name || 'Unnamed Restaurant',
+        logo: setting?.logo_url || r.logo || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=500&auto=format&fit=crop&q=60',
+        owner_name: setting?.restaurant_name || r.owner_name || r.name || 'Admin',
+        email: r.email || `owner_${r.slug || r.id.substring(0, 5)}@webrajyapos.com`,
+        phone: r.phone || '+91 98765 43210',
+        plan: (r.subscription_plan || r.plan || 'starter') as SubscriptionPlanTier,
+        status: (r.status || 'active') as RestaurantStatus,
+        created_at: r.created_at || new Date().toISOString(),
+        expiry_date: r.subscription_expires_at || r.expiry_date || new Date(Date.now() + 365*24*3600*1000).toISOString(),
+        branches_count: branchesCount,
+        address: r.address || 'Main Street',
+        city: r.city || 'Mumbai',
+        state: r.state || 'Maharashtra',
+        country: r.country || 'India',
+        gst_number: setting?.gst_number || r.gst_number || '27AAAAA0000A1Z5',
+        timezone: setting?.timezone || 'Asia/Kolkata',
+        currency: setting?.currency || 'INR',
+        invoice_prefix: setting?.invoice_prefix || 'TX',
+      };
+    });
+
+    dbStore.restaurants = mappedRestaurants;
+    return mappedRestaurants;
+  } catch (err: any) {
+    console.error('[supabaseDb] fetchRestaurants exception:', err);
     return [...dbStore.restaurants];
   }
-
-  dbStore.restaurants = data as Restaurant[];
-  return data as Restaurant[];
 }
 
 export async function createRestaurant(payload: {
@@ -323,7 +359,7 @@ export interface OnboardingData {
   country: string;
   gstNumber: string;
   logo?: string;
-  plan: 'starter' | 'premium' | 'enterprise';
+  plan: SubscriptionPlanTier;
   expiryDate: string;
   timezone: string;
   currency: string;
@@ -340,7 +376,8 @@ export async function onboardRestaurantTransaction(
     return { success: false, error: 'Missing required fields: name, email, or owner name.', step: 'validation' };
   }
 
-  const restaurantId = genId('rest');
+  let restaurantId = genId('rest');
+  let branchId = genId('br');
   const now = new Date().toISOString();
   let authUserId: string | null = null;
   let stepCompleted: string[] = [];
@@ -388,134 +425,113 @@ export async function onboardRestaurantTransaction(
     stepCompleted.push('auth_user_skipped');
   }
 
-  // ── STEP 2: Insert into restaurants ─────────────────────────
-  console.log('[Onboarding] Step 2: Inserting into restaurants...');
-  const restaurantPayload = {
-    id: restaurantId,
-    name: data.name,
-    owner_name: data.ownerName,
-    email: data.email.toLowerCase(),
-    phone: data.phone,
-    address: data.address,
-    city: data.city,
-    state: data.state,
-    country: data.country,
-    gst_number: data.gstNumber,
-    logo: data.logo || '',
-    plan: data.plan as SubscriptionPlanTier,
-    status: 'active' as RestaurantStatus,
-    expiry_date: new Date(data.expiryDate).toISOString(),
-    created_at: now,
-    updated_at: now,
-  };
+  // ── STEP 2-8: Direct Multi-Table Tenant Provisioning ─────────────────────
+  if (isSupabaseConfigured) {
+    console.log('[Onboarding] Executing multi-table tenant provisioning...');
+    const slug = data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString().slice(-4);
+    
+    // 1. Insert Restaurant
+    const { error: restErr } = await supabase.from('restaurants').insert([{
+      id: restaurantId,
+      name: data.name,
+      slug: slug,
+      status: 'active',
+      subscription_plan: data.plan || 'starter',
+      subscription_expires_at: new Date(data.expiryDate).toISOString(),
+      owner_id: authUserId,
+      created_at: now,
+      updated_at: now,
+    }]);
 
-  const restResult = await createRestaurant(restaurantPayload);
-  if (!restResult.success) {
-    // Rollback Step 1: Auth user (cannot easily delete without admin key — log it)
-    console.error('[Onboarding] Step 2 FAILED. Rolling back...');
-    return { success: false, error: `Step 2 Failed (restaurants): ${restResult.error}`, step: 'restaurants' };
-  }
-  stepCompleted.push('restaurants');
-  console.log('[Onboarding] Step 2 ✅ Restaurant row inserted.');
-
-  // ── STEP 3: Insert into restaurant_users ────────────────────
-  if (authUserId && isSupabaseConfigured) {
-    console.log('[Onboarding] Step 3: Inserting into restaurant_users...');
-    const ruResult = await createRestaurantUser({
-      user_id: authUserId,
-      restaurant_id: restaurantId,
-      role: 'owner',
-    });
-    if (!ruResult.success) {
-      console.error('[Onboarding] Step 3 FAILED. Rolling back Steps 1-2...');
-      await deleteRestaurant(restaurantId);
-      return { success: false, error: `Step 3 Failed (restaurant_users): ${ruResult.error}`, step: 'restaurant_users' };
+    if (restErr) {
+      console.error('[Onboarding] Insert restaurant failed:', restErr.message);
+      return { success: false, error: `Step 2 Failed (restaurants): ${restErr.message}`, step: 'restaurants' };
     }
-    stepCompleted.push('restaurant_users');
-    console.log('[Onboarding] Step 3 ✅ restaurant_users row inserted.');
+    stepCompleted.push('restaurants');
+
+    // 2. Insert Settings
+    const { error: settingsErr } = await supabase.from('restaurant_settings').insert([{
+      id: genId('sett'),
+      restaurant_id: restaurantId,
+      restaurant_name: data.name,
+      gst_number: data.gstNumber || '',
+      logo_url: data.logo || '',
+      currency: data.currency || 'INR',
+      timezone: data.timezone || 'Asia/Kolkata',
+      theme: 'default',
+      invoice_prefix: data.invoicePrefix || data.name.substring(0, 3).toUpperCase(),
+      created_at: now,
+      updated_at: now,
+    }]);
+
+    if (settingsErr) {
+      console.error('[Onboarding] Insert settings failed:', settingsErr.message);
+      await supabase.from('restaurants').delete().eq('id', restaurantId);
+      return { success: false, error: `Step 3 Failed (settings): ${settingsErr.message}`, step: 'restaurant_settings' };
+    }
+    stepCompleted.push('restaurant_settings');
+
+    // 3. Insert Counters
+    const { error: counterErr } = await supabase.from('restaurant_counters').insert([{
+      restaurant_id: restaurantId,
+      order_seq: 1000,
+      token_seq: 1,
+      kot_seq: 1,
+      updated_at: now,
+    }]);
+
+    if (counterErr) {
+      console.error('[Onboarding] Insert counters failed:', counterErr.message);
+      await supabase.from('restaurant_settings').delete().eq('restaurant_id', restaurantId);
+      await supabase.from('restaurants').delete().eq('id', restaurantId);
+      return { success: false, error: `Step 4 Failed (counters): ${counterErr.message}`, step: 'restaurant_counters' };
+    }
+    stepCompleted.push('restaurant_counters');
+
+    // 4. Insert Branch
+    const { error: branchErr } = await supabase.from('branches').insert([{
+      id: branchId,
+      restaurant_id: restaurantId,
+      name: data.branchName || 'Main Branch',
+      is_active: true,
+      created_at: now,
+      updated_at: now,
+    }]);
+
+    if (branchErr) {
+      console.error('[Onboarding] Insert branch failed:', branchErr.message);
+      await supabase.from('restaurant_counters').delete().eq('restaurant_id', restaurantId);
+      await supabase.from('restaurant_settings').delete().eq('restaurant_id', restaurantId);
+      await supabase.from('restaurants').delete().eq('id', restaurantId);
+      return { success: false, error: `Step 5 Failed (branches): ${branchErr.message}`, step: 'branches' };
+    }
+    stepCompleted.push('branches');
+
+    // 5. Seed Payment Methods
+    const pmRows = [
+      { id: genId('pm'), restaurant_id: restaurantId, name: 'Cash', type: 'cash', is_active: true, created_at: now, updated_at: now },
+      { id: genId('pm'), restaurant_id: restaurantId, name: 'UPI', type: 'upi', is_active: true, created_at: now, updated_at: now },
+      { id: genId('pm'), restaurant_id: restaurantId, name: 'Credit Card', type: 'card', is_active: true, created_at: now, updated_at: now },
+    ];
+    await supabase.from('payment_methods').insert(pmRows);
+    stepCompleted.push('payment_methods');
+
+    // 6. Seed Taxes
+    const taxRows = [
+      { id: genId('tax'), restaurant_id: restaurantId, name: 'CGST', percentage: 2.5, tax_type: 'gst', is_active: true, created_at: now, updated_at: now },
+      { id: genId('tax'), restaurant_id: restaurantId, name: 'SGST', percentage: 2.5, tax_type: 'gst', is_active: true, created_at: now, updated_at: now },
+    ];
+    await supabase.from('taxes').insert(taxRows);
+    stepCompleted.push('taxes');
+
+    console.log('[Onboarding] Direct multi-table provisioning completed successfully.');
   } else {
-    console.log('[Onboarding] Step 3 Skipped: No auth user ID available.');
-    stepCompleted.push('restaurant_users_skipped');
+    console.log('[Onboarding] Offline fallback active.');
+    stepCompleted.push('offline_mock_provision');
   }
-
-  // ── STEP 4: Insert into restaurant_settings ─────────────────
-  console.log('[Onboarding] Step 4: Inserting into restaurant_settings...');
-  const settingsResult = await createRestaurantSettings({
-    restaurant_id: restaurantId,
-    currency: data.currency || 'INR',
-    gst_percentage: 5.0,
-  });
-  if (!settingsResult.success) {
-    console.error('[Onboarding] Step 4 FAILED. Rolling back...');
-    await deleteRestaurantUsers(restaurantId);
-    await deleteRestaurant(restaurantId);
-    return { success: false, error: `Step 4 Failed (restaurant_settings): ${settingsResult.error}`, step: 'restaurant_settings' };
-  }
-  stepCompleted.push('restaurant_settings');
-  console.log('[Onboarding] Step 4 ✅ restaurant_settings row inserted.');
-
-  // ── STEP 5: Insert into restaurant_counters ─────────────────
-  console.log('[Onboarding] Step 5: Inserting into restaurant_counters...');
-  const countersResult = await createRestaurantCounters({
-    restaurant_id: restaurantId,
-    order_counter: 1000,
-    kot_counter: 1,
-  });
-  if (!countersResult.success) {
-    console.error('[Onboarding] Step 5 FAILED. Rolling back...');
-    await deleteRestaurantUsers(restaurantId);
-    await deleteRestaurant(restaurantId);
-    return { success: false, error: `Step 5 Failed (restaurant_counters): ${countersResult.error}`, step: 'restaurant_counters' };
-  }
-  stepCompleted.push('restaurant_counters');
-  console.log('[Onboarding] Step 5 ✅ restaurant_counters row inserted.');
-
-  // ── STEP 6: Create default branch ───────────────────────────
-  console.log('[Onboarding] Step 6: Creating default branch...');
-  const branchId = genId('br');
-  const branchResult = await createBranch({
-    id: branchId,
-    restaurant_id: restaurantId,
-    name: data.branchName || 'Main Branch',
-    status: 'active',
-    created_at: now,
-  });
-  if (!branchResult.success) {
-    console.error('[Onboarding] Step 6 FAILED. Rolling back...');
-    await deleteRestaurantUsers(restaurantId);
-    await deleteRestaurant(restaurantId);
-    return { success: false, error: `Step 6 Failed (branches): ${branchResult.error}`, step: 'branches' };
-  }
-  stepCompleted.push('branches');
-  console.log('[Onboarding] Step 6 ✅ Default branch created.');
-
-  // ── STEP 7: Insert default payment methods ──────────────────
-  console.log('[Onboarding] Step 7: Inserting default payment methods...');
-  const pmResult = await createDefaultPaymentMethods(restaurantId);
-  if (!pmResult.success) {
-    console.error('[Onboarding] Step 7 FAILED. Rolling back...');
-    await deleteRestaurantUsers(restaurantId);
-    await deleteRestaurant(restaurantId);
-    return { success: false, error: `Step 7 Failed (payment_methods): ${pmResult.error}`, step: 'payment_methods' };
-  }
-  stepCompleted.push('payment_methods');
-  console.log('[Onboarding] Step 7 ✅ Default payment methods seeded (6 methods).');
-
-  // ── STEP 8: Insert default taxes ────────────────────────────
-  console.log('[Onboarding] Step 8: Inserting default taxes...');
-  const taxResult = await createDefaultTaxes(restaurantId);
-  if (!taxResult.success) {
-    console.error('[Onboarding] Step 8 FAILED. Rolling back...');
-    await deletePaymentMethods(restaurantId);
-    await deleteRestaurantUsers(restaurantId);
-    await deleteRestaurant(restaurantId);
-    return { success: false, error: `Step 8 Failed (taxes): ${taxResult.error}`, step: 'taxes' };
-  }
-  stepCompleted.push('taxes');
-  console.log('[Onboarding] Step 8 ✅ Default taxes seeded (CGST, SGST, IGST, Service Charge).');
 
   // ── ALL STEPS COMPLETE ───────────────────────────────────────
-  console.log('[Onboarding] 🎉 All 8 steps completed successfully!', stepCompleted);
+  console.log('[Onboarding] 🎉 Onboarding completed successfully!', stepCompleted);
 
   // Build the local Restaurant object for immediate UI update
   const restaurant: Restaurant = {

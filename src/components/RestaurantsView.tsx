@@ -150,7 +150,7 @@ export default function RestaurantsView({
       ownerName: rest.owner_name || rest.name,
       email: rest.email || 'admin@webrajya.com',
       role: 'owner',
-      plan: rest.subscription_plan || 'Enterprise'
+      plan: rest.plan || 'Enterprise'
     };
     
     localStorage.setItem('wr_pos_session', JSON.stringify(tenantSession));
