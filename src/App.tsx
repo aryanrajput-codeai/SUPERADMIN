@@ -106,6 +106,7 @@ export default function App() {
       return;
     }
 
+    setIsLoggingIn(true);
     try {
       const res = await supabaseService.login(authEmail);
       if (res.success) {
@@ -374,7 +375,7 @@ export default function App() {
                   transition={{ duration: 0.15 }}
                 >
                   {selectedRestaurantId ? (
-                    <RestaurantDetailsView
+                    <RestaurantDetailsView 
                       restaurantId={selectedRestaurantId}
                       restaurants={restaurants}
                       payments={payments}
@@ -385,7 +386,7 @@ export default function App() {
                   ) : (
                     <>
                       {activeTab === 'dashboard' && (
-                        <DashboardView
+                        <DashboardView 
                           restaurants={restaurants}
                           payments={payments}
                           logs={logs}
@@ -395,7 +396,7 @@ export default function App() {
                       )}
 
                       {activeTab === 'restaurants' && (
-                        <RestaurantsView
+                        <RestaurantsView 
                           restaurants={restaurants}
                           onSelectRestaurant={handleSelectRestaurant}
                           onUpdateStatus={handleUpdateStatus}
@@ -408,14 +409,14 @@ export default function App() {
                       )}
 
                       {activeTab === 'subscriptions' && (
-                        <SubscriptionsView
+                        <SubscriptionsView 
                           plans={settings.plans}
                           payments={payments}
                         />
                       )}
 
                       {activeTab === 'payments' && (
-                        <PaymentsView
+                        <PaymentsView 
                           payments={payments}
                           onRefundPayment={(id) => {
                             dbStore.updateRestaurantStatus(id, 'suspended'); // Suspend on refund
@@ -426,14 +427,14 @@ export default function App() {
                       )}
 
                       {activeTab === 'analytics' && (
-                        <AnalyticsView
+                        <AnalyticsView 
                           restaurants={restaurants}
                           payments={payments}
                         />
                       )}
 
                       {activeTab === 'support' && (
-                        <SupportView
+                        <SupportView 
                           tickets={tickets}
                           onReplyTicket={handleReplyTicket}
                           onUpdateTicketStatus={handleUpdateTicketStatus}
@@ -441,7 +442,7 @@ export default function App() {
                       )}
 
                       {activeTab === 'settings' && (
-                        <SettingsView
+                        <SettingsView 
                           settings={settings}
                           onUpdateSettings={handleUpdateSettings}
                           onClearAllData={handleClearAllData}
@@ -449,7 +450,7 @@ export default function App() {
                       )}
 
                       {activeTab === 'profile' && (
-                        <ProfileView
+                        <ProfileView 
                           adminName={adminUser.name}
                           adminEmail={adminUser.email}
                           onUpdateName={(name) => {
@@ -470,7 +471,7 @@ export default function App() {
           {/* 3. MULTI-STEP CREATOR WIZARD OVERLAY */}
           <AnimatePresence>
             {isWizardOpen && (
-              <AddRestaurantWizard
+              <AddRestaurantWizard 
                 onClose={() => setIsWizardOpen(false)}
                 onSubmit={handleCreateRestaurant}
               />
